@@ -1,0 +1,152 @@
+# Scenario executor class
+from network_playground import NetworkPlayground
+
+class ScenarioExecutor(Process):
+    procedure setup(scenario_config)
+        """
+        Initialization
+        """
+   
+        # Read scenarios from file
+        '''
+        Scenario format
+        [
+            {
+                "num_replicas" : 4,
+                "num_twins" : 1,
+                "round_config" : {
+                    0 : {
+                        leaders : [A]  # List of leaders
+                        partitions : [[A,B],[C,D,D']]   # Network Paritions
+                    }
+                }
+            }
+        ]
+        '''
+        self.num_replicas = scenario_config["num_replicas"]
+        self.num_twins = scenario_config["num_twins"]
+        self.round_config = scenario_config["round_config"]
+       
+        # Generate Signing Keys
+        signing_key_list, verify_key_list = generate_signing_and_verify_keys()
+        self.signing_key_list_replica = signing_key_list
+        self.verify_key_list_replica = verify_key_list
+
+        # Create Replicas
+        self.replicas = new(Replica, num = num_replicas)
+        self.twins = new(Replica, num = num_twins)
+        
+        # Add entry to twin maps
+        self.twins_map = {twins[i]:replicas[i] for in num_replicas}     
+        # <A':A>
+
+
+        # Parse Scenario config (Map process names to process objs of DistAlgo)
+        parsed_scenario_config = parse_scenario_config()
+        self.network_playground = NetworkPlayground(parsed_scenario_config, twin_map)
+
+        # Safety and Validity Checking vars
+        self.committed = {}  # Maintain a dict of <index,txn> of ledger
+        self.LFT = (num_twins + 1) * TR  # TR = Round Completion Time : Pre-calculated
+        self.safety_violated = False
+       
+    procedure generate_signing_and_verify_keys():
+        """
+        Generate signing and verify keys
+        """
+        signing_key_list, verify_key_list = [], []
+        for i in range(num_replicas):
+            signing_key = SigningKey.generate()
+            signing_key_list.append(signing_key) #Private Key
+            verify_key_list.append(signing_key.verify_key) #Public Key
+        return signing_key_list, verify_key_list #Private Key, Public Key lists
+
+    procedure setup_replicas():
+        """
+        Setup the replicas using keys.
+        """    
+        for i in range(num_replicas):
+            setup(replicas[i], (verify_key_list_replica[i], signing_key_list_replica[i], verify_key_list_replica, network_playground))
+   
+    
+    procedure setup_twins():
+        """
+        Setup the twins.
+        """
+        for i in range(num_twins):
+            # Twin i will have same keys as ith replica
+            setup(twins[i], (verify_key_list_replica[i], signing_key_list_replica[i], verify_key_list_replica, network_playground))
+
+               
+    procedure parse_scenario_config():
+        round_config = scenario_config["round_config"]
+        for round in round_config:
+            # Map leaders to process objs
+            leaders = map_leaders_to_process_objs()
+            # Map process names to process objs
+            partitions = map_partitions_to_process_objs()
+
+            round_config[round]["leaders"] = leaders
+            round_config[round]["partitions"] = partitions
+        return round_config
+
+    procedure map_leaders_to_process_objs():
+    """
+    Maps leaders to process names to DistAlgo process objs
+    A -> replicas[0]
+    B -> replicas[1]
+    """
+
+    procedure map_partitions_to_process_objs():
+    """
+    Maps process names in partition to DistAlgo process objs
+    [A,B] -> [replicas[0],replicas[1]]
+    """
+    def receive(msg):
+        reset_timer()  # Reset Timer for LFT
+
+        # msg.id : index of entry in ledger
+        # msg.txn : txn of ledger
+        if msg.id in committed:
+            if committed[msg.id] != msg.txn:
+                # Safety Violation
+                send("Violation", type="Safety" to=parent())  
+                end(replicas)      
+                end(twins)
+       else:
+           committed[msg.id] = msg.txn
+
+    procedure run(generated_scenario):
+        """
+        Run method of the scenario executor
+        """
+   
+        #Setup the replicas, twins
+        self.setup_replicas()
+        self.setup_twins()
+
+        #Start the replicas, twins
+        start(self.replicas)
+        start(self.twins)
+        start_timer(LFT)
+        # Wait for LFT : Liveness Fail Time
+        while True:
+            if (LFT)   # No Blocks Committed in LFT time:
+                end(self.replicas)
+                end(self.twins)
+                send("Violation", type="Liveness" to=parent())
+            elif safety_violated:
+                end(self.replicas)
+                end(self.twins)
+                send("Violation", type="Safety" to=parent())
+           
+            Wait until all replicas and twins are terminated
+                send("Done", to=parent())
+   
+procedure main():
+    scenario_configs = read_configs_from_file("test_scenarios.json")
+    for scenario_config in scenario_configs:
+        scenario_executor = ScenarioExecutor(scenario_config)
+        scenario_executor.run()
+       
+        Wait for msg from scenario_executor

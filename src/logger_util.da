@@ -9,6 +9,7 @@ class LOGGER:
     replicas = []
     clients = []
     filename = ""
+    nw_playground = None
 
     def log_event(event, msg_type, msg, proc=None):
         if proc is None:
@@ -19,6 +20,8 @@ class LOGGER:
             other_proc = "validator_" + str(LOGGER.replicas.index(proc))
         elif proc in LOGGER.clients:
             other_proc = "client_" + str(LOGGER.clients.index(proc))
+        elif proc == LOGGER.nw_playground:
+            other_proc = "client_" + str(LOGGER.nw_playground)
         else:
             other_proc = "parent_process"
 
@@ -42,7 +45,7 @@ class LOGGER:
         )
         f.close()
 
-    def log_action(action, obj):
+    def log_action(action, obj=None):
         if obj != None and hasattr(obj, '__dict__'):
             obj = todict(obj)
 

@@ -11,11 +11,11 @@ from mem_pool import MemPool
 from object_types import FailType, MsgType, ProposalMsg
 from pacemaker import Pacemaker
 from safety import Safety
-
+from network_playground import NetworkPlayground
 
 class Validator (process):
 
-    def setup(config, config_id: int, validator_id: int, replicas: list, clients: list, private_key, public_keys_validators, public_keys_clients):
+    def setup(config, config_id: int, validator_id: int, replicas: list, clients: list, private_key, public_keys_validators, public_keys_clients, nw_playground, parsed_config):
 
         LOGGER.replicas = replicas
         LOGGER.process_id = "validator_" + str(validator_id)
@@ -39,20 +39,22 @@ class Validator (process):
         self.pacemaker = Pacemaker(
             validator_id, replicas, self.blocktree, self.safety, config['nfaulty'], config['delta'], send_timeout_msg)
         self.mempool = MemPool(validator_id)
-        self.leader_election = LeaderElection(
-            validator_id, replicas, self.ledger, self.pacemaker, config['window_size'], config['exclude_size'])
-
+        self.parsed_config = parsed_config
+        
+        self.leader_election = LeaderElection(replicas, parsed_config)
         Cryptography.private_key = self.private_key
         Cryptography.replicas = self.replicas
         Cryptography.public_keys_validators = self.public_keys_validators
 
+
+        self.nw_playground = nw_playground
         if config['failure_config'].seed is None:
             config['failure_config'].seed = random.randint(10000, 100000)
             LOGGER.log_action("Generated a seed for failure config",
                               config['failure_config'].seed)
 
         random.seed(config['failure_config'].seed)
-
+        
     # For fault injection
     def setattr(attr, value):
         if attr == 'current_round':
@@ -65,7 +67,7 @@ class Validator (process):
     # Broadcast the timeout message
     def send_timeout_msg(timeout_msg):
         LOGGER.log('Validator: send_timeout_message', timeout_msg)
-        send(('Timeout', timeout_msg), to=self.replicas)
+        send(('Timeout', timeout_msg, self.pacemaker.current_round), to=self.nw_playground)
         LOGGER.log_event('Sent', 'Timeout', timeout_msg, self.replicas)
 
     '''Procedure start event processing(M)'''
@@ -99,8 +101,8 @@ class Validator (process):
                     self.request_cache[request_id] = resp
             self.recently_committed_block_ids.clear()
 
-        '''LeaderElection.update leaders(qc)'''
-        self.leader_election.update_leaders(qc)
+        # '''LeaderElection.update leaders(qc)'''
+        # self.leader_election.update_leaders(qc)
 
         '''Pacemaker.advance round(qc.vote info.round)'''
         self.pacemaker.advance_round_qc(qc)
@@ -112,8 +114,13 @@ class Validator (process):
         LOGGER.log('Validator: process_new_round_event', last_tc)
 
         '''if u = LeaderElection.get leader(Pacemaker.current round) then'''
-        if self.replicas[validator_id] == self.leader_election.get_leader(self.pacemaker.current_round):
+        print(f"Current Round  : {self.pacemaker.current_round}")
+        print(f"Current Leader : {self.leader_election.get_leader(self.pacemaker.current_round)}")
+        print(f"Current : {self.replicas[validator_id]}")
 
+        if self.replicas[validator_id] == self.leader_election.get_leader(self.pacemaker.current_round):
+            print("Validator_id :",validator_id)
+        
             # Check if there are any transactions in the MemPool
             if self.mempool.peek_pool() == 0:
                 self.should_start_new_round = True
@@ -146,16 +153,17 @@ class Validator (process):
                 high_commit_qc=self.blocktree.high_commit_qc,
                 validator=validator_id
             )
-            send(('Proposal', proposal_msg), to=self.replicas)
+            send(('Proposal', proposal_msg, self.pacemaker.current_round), to=self.nw_playground)
             LOGGER.log_event("Sent", "Proposal",
                              proposal_msg, self.replicas)
 
         LOGGER.log("Validator: process_new_round_event ends", None)
 
     '''Procedure process proposal msg(P)'''
-    def receive(msg=('Proposal', proposal_msg), from_=p):
+    def receive(msg=('Proposal', proposal_msg, author), from_=p):
+        p = author
         LOGGER.log_event("Received", "Proposal", proposal_msg, p)
-
+        
         signature_verified = Cryptography.get_verified_message(
             proposal_msg.signature, public_keys_validators[p])
 
@@ -204,17 +212,21 @@ class Validator (process):
 
             '''if vote msg != ⊥ then
                     send vote msg to LeaderElection.get leader(current round + 1)'''
+            print(f"-------> Vote Msg : {vote_msg}")
             if vote_msg is not None:
-                next_leader = self.leader_election.get_leader(round + 1)
-                send(('Vote', vote_msg),
-                     to=next_leader)
+                print(f"---> Sending Vote Msg to Next Round : {self.pacemaker.current_round + 1}")
+                next_leader = self.leader_election.get_leader(self.pacemaker.current_round + 1)
+                print(f"Next Leader : {next_leader}")
+                send(('Vote', vote_msg, self.pacemaker.current_round, next_leader),
+                     to=self.nw_playground)
                 LOGGER.log_event("Sent", "Vote", vote_msg, next_leader)
 
         else:
             LOGGER.log_action("Verified ProposalMsg signature", False)
 
     '''Procedure process vote msg(M)'''
-    def receive(msg=('Vote', vote_msg), from_=p):
+    def receive(msg=('Vote', vote_msg, author), from_=p):
+        p = author
         LOGGER.log_event("Received", "Vote", vote_msg, p)
 
         signature_verified = Cryptography.get_verified_message(
@@ -238,7 +250,8 @@ class Validator (process):
         LOGGER.log("Received VoteMsg ends g", None)
 
     '''Procedure process timeout msg(M)'''
-    def receive(msg=('Timeout', timeout_msg), from_=p):
+    def receive(msg=('Timeout', timeout_msg, author), from_=p):
+        p = author
         LOGGER.log_event("Received", "Timeout", timeout_msg, p)
 
         signature_verified = Cryptography.get_verified_message(

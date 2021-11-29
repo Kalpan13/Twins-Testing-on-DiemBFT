@@ -1,0 +1,61 @@
+from logger_util import LOGGER
+
+class NetworkPlayground (process):
+
+    def setup(replicas, config_id, twin_config, partition_config={}, twins={}):
+        self.partition_config = partition_config    # Roundwise partition config.
+        self.twins = twins # Map containing <Twin Process, Actual Process>
+        self.replicas = replicas
+        self.twin_config = twin_config
+        LOGGER.replicas = replicas
+        LOGGER.filename = '../logs/config' + str(config_id) + '/' \
+            + "Network_Playground" + ".log"
+        LOGGER.nw_playground = self 
+
+    def run():
+        await(received(('Done',), from_=parent()))
+        
+    '''Procedure process proposal msg(P)'''
+    def receive(msg=('Proposal', proposal_msg, current_round), from_=p):
+        LOGGER.log_event("Received", "Proposal", proposal_msg, p)
+        partition_members = find_partition_members(current_round, p)
+        LOGGER.log_action("Sending Proposal Msg to ", partition_members)
+        send(('Proposal', proposal_msg, p), to=partition_members)
+
+    '''Procedure process vote msg(M)'''
+    def receive(msg=('Vote', vote_msg, current_round, to), from_=p):
+        LOGGER.log_action(f"Received Vote Msg from: {p}, for:{to} ")
+        partition_members = find_partition_members(current_round, p)
+        if to in partition_members:
+            LOGGER.log_action("Sending Vote Msg to ",to)
+            send(('Vote', vote_msg, p), to=to)
+
+    '''Procedure process timeout msg(M)'''
+    def receive(msg=('Timeout', timeout_msg, current_round), from_=p):
+        LOGGER.log_event("Received", "Timeout", timeout_msg, p)
+        partition_members = find_partition_members(current_round, p)
+        LOGGER.log_action("Sending Timeout Msg to ", partition_members)
+        send(('Timeout', timeout_msg, p), to=partition_members)
+
+    def find_partition_members(current_round, replica):
+        round_partitions = twin_config["round_configs"][current_round]["partitions"]
+        print("------->Round Partitions : ",round_partitions)
+        for partition in round_partitions:
+            if replica in partition:
+                return partition
+# [
+# {
+#     "round_configs": {
+#     "1": {"leader": ["A", "A'"], 
+#     "partitions": [["A", "A'"], ["B", "C", "D"]]}, 
+#     "2": {"leader": ["C"], 
+#     "partitions": [["A", "B", "C"], ["D", "A'"]]}, 
+#     "3": {"leader": ["A", "A'"], 
+#     "partitions": [["A", "A'"], ["B", "C", "D"]]}, 
+#     "4": {"leader": ["C"], 
+#     "partitions": [["A", "B", "C"], ["D", "A'"]]}
+# }, 
+# "no_of_twins": 1, 
+# "no_of_rounds": 4, 
+# "no_of_replicas": 4
+# }]
