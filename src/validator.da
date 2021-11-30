@@ -15,14 +15,21 @@ from network_playground import NetworkPlayground
 
 class Validator (process):
 
-    def setup(config, config_id: int, validator_id: int, replicas: list, clients: list, private_key, public_keys_validators, public_keys_clients, nw_playground, parsed_config):
-
+    def setup(config, config_id: int, validator_id: int, replicas: list, clients: list, private_key, public_keys_validators, public_keys_clients, nw_playground, parsed_config, twin_of=None):
+        
+        # TODO : Handle validator_id
         LOGGER.replicas = replicas
-        LOGGER.process_id = "validator_" + str(validator_id)
-        LOGGER.clients = clients
-        LOGGER.filename = '../logs/config' + str(config_id) + '/' \
-            + LOGGER.process_id + ".log"
-
+        if twin_of is not None:        
+            LOGGER.process_id = "validator_" + str(validator_id) + "_twin"
+            LOGGER.clients = clients
+            LOGGER.filename = '../logs/config' + str(config_id) + '/' \
+                + LOGGER.process_id + ".log"
+        else:
+            LOGGER.process_id = "validator_" + str(validator_id)
+            LOGGER.clients = clients
+            LOGGER.filename = '../logs/config' + str(config_id) + '/' \
+                + LOGGER.process_id + ".log"
+        
         LOGGER.log_action("Initial configuration", config)
 
         self.id_block = dict()
@@ -31,7 +38,7 @@ class Validator (process):
         self.should_start_new_round = True
 
         self.ledger = Ledger(
-            config_id, validator_id, self.id_block, self.recently_committed_block_ids, self.request_cache)
+            config_id, validator_id, self.id_block, self.recently_committed_block_ids, self.request_cache, twin_of)
         self.blocktree = BlockTree(
             validator_id, replicas, self.ledger, config['nfaulty'], self.id_block)
         self.safety = Safety(validator_id, replicas,
@@ -46,8 +53,8 @@ class Validator (process):
         Cryptography.replicas = self.replicas
         Cryptography.public_keys_validators = self.public_keys_validators
 
-
         self.nw_playground = nw_playground
+
         if config['failure_config'].seed is None:
             config['failure_config'].seed = random.randint(10000, 100000)
             LOGGER.log_action("Generated a seed for failure config",
@@ -114,13 +121,10 @@ class Validator (process):
         LOGGER.log('Validator: process_new_round_event', last_tc)
 
         '''if u = LeaderElection.get leader(Pacemaker.current round) then'''
-        print(f"Current Round  : {self.pacemaker.current_round}")
-        print(f"Current Leader : {self.leader_election.get_leader(self.pacemaker.current_round)}")
-        print(f"Current : {self.replicas[validator_id]}")
-
+        # TODO : Handle this in case of twins
+        LOGGER.log_action(f"self.replicas[validator_id] == self.leader_election.get_leader(self.pacemaker.current_round): : {self.replicas[validator_id] == self.leader_election.get_leader(self.pacemaker.current_round):}")
         if self.replicas[validator_id] == self.leader_election.get_leader(self.pacemaker.current_round):
-            print("Validator_id :",validator_id)
-        
+            
             # Check if there are any transactions in the MemPool
             if self.mempool.peek_pool() == 0:
                 self.should_start_new_round = True
@@ -212,11 +216,8 @@ class Validator (process):
 
             '''if vote msg != ⊥ then
                     send vote msg to LeaderElection.get leader(current round + 1)'''
-            print(f"-------> Vote Msg : {vote_msg}")
             if vote_msg is not None:
-                print(f"---> Sending Vote Msg to Next Round : {self.pacemaker.current_round + 1}")
                 next_leader = self.leader_election.get_leader(self.pacemaker.current_round + 1)
-                print(f"Next Leader : {next_leader}")
                 send(('Vote', vote_msg, self.pacemaker.current_round, next_leader),
                      to=self.nw_playground)
                 LOGGER.log_event("Sent", "Vote", vote_msg, next_leader)
@@ -294,9 +295,15 @@ class Validator (process):
                 return
 
             req['client'] = client
+            # Modify Client Txn
+            # TODO : REMOVE
+            if twin_of is not None:
+                req['req_id'] = req['req_id'] + "_twin"
+            
             self.mempool.add_transaction(req)
 
             if self.should_start_new_round:
+                
                 process_new_round_event(None)
                 self.should_start_new_round = False
         else:

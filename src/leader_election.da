@@ -9,7 +9,7 @@ class LeaderElection:
         self.twin_config = twin_config
         
     def get_leader(self, current_round):
-        print("Config :", self.twin_config)
+        #print("Config :", self.twin_config)
         return self.twin_config["round_configs"][current_round]["leader"]
 
 

@@ -2,16 +2,23 @@
     {
         "round_configs": {
         "1": {"leader": ["A"], 
-        "partitions": [["A"], ["B", "C", "D"]]}, 
+        "partitions": [["A"], ["B", "C", "D", "A'"]]}, 
         "2": {"leader": ["C"], 
-        "partitions": [["A", "B", "C"], ["D"]]}, 
-        "3": {"leader": ["A"], 
-        "partitions": [["A"], ["B", "C", "D"]]}, 
-        "4": {"leader": ["C"], 
-        "partitions": [["A", "B", "C"], ["D"]]}
+        "partitions": [["A"], ["B", "C", "D", "A'"]]}, 
+        "3": {"leader": ["B"], 
+        "partitions": [["A"], ["B", "C", "D", "A'"]]}, 
+        "4": {"leader": ["B"], 
+        "partitions": [["B"], ["A", "C", "D", "A'"]]},
+        "5": {"leader": ["C"], 
+        "partitions": [["A", "B", "C", "D", "A'"]]},
+        "6": {"leader": ["D"], 
+        "partitions": [["A", "B", "C", "D", "A'"]]},
+        "7": {"leader": ["C"], 
+        "partitions": [["A", "B", "C", "D", "A'"]]}
+
     }, 
     "no_of_twins": 1, 
-    "no_of_rounds": 4, 
+    "no_of_rounds": 7, 
     "no_of_replicas": 4
     }
 

@@ -6,7 +6,7 @@ from logger_util import LOGGER
 
 class Client(process):
 
-    def setup(config, config_id: int, client_id: int, validators: list, private_key, public_keys_validators):
+    def setup(config, config_id: int, client_id: int, validators: list, private_key, public_keys_validators, twins_list):
 
         LOGGER.replicas = validators
         LOGGER.process_id = "client_" + str(client_id)
@@ -21,13 +21,12 @@ class Client(process):
         self.sleep_time = config['sleeptime']
         self.nops = config['nclientops']
         self.f = config['nfaulty']
-
         Cryptography.private_key = self.private_key
 
     def send_request(request):
         signed_req = Cryptography.sign_message(request)
 
-        send(('Request', signed_req), to=validators)
+        send(('Request', signed_req), to=(validators+twins_list))
         LOGGER.log_event("Sent", "Request", request, validators)
 
         # Wait until clienttimeout

@@ -30,6 +30,8 @@ class RunDiemBFT(process):
 
         private_keys_validators = {}
         public_keys_validators = {}
+        private_keys_twins = {}
+        public_keys_twins = {}
         private_keys_clients = {}
         public_keys_clients = {}
 
@@ -38,12 +40,22 @@ class RunDiemBFT(process):
         
         
         validators = new(ValidatorFI, num=no_of_replicas)
+        twins = new(ValidatorFI, num = no_of_twins)
         clients = new(Client, num=nclients)
         nw_playground = new(NetworkPlayground, num=1)
 
-        #TODO : Add twins
-        parsed_config = parse_config(twin_config, validators)
+        validators_list = list(validators)
+        twins_list = list(twins)
 
+
+        parsed_config = parse_config(twin_config, validators_list, twins_list)
+        
+        twins_mappings = {}  # <Twin, Process>
+
+        for i in range(0,no_of_twins):
+            twins_mappings[twins_list[i]] = validators_list[i]
+
+        #print("========> Twin Mappings : ", twins_mappings)
         for v in validators:
             private_key, public_key = Cryptography.generate_key()
             private_keys_validators[v] = private_key
@@ -54,7 +66,7 @@ class RunDiemBFT(process):
             private_keys_clients[c] = private_key
             public_keys_clients[c] = public_key
 
-        setup(nw_playground, (list(validators), config_id, parsed_config))
+        setup(nw_playground, (list(validators), config_id, parsed_config, twins_mappings))
 
         for i, v in enumerate(validators):
             setup({v}, (config, config_id, i, list(validators), list(clients),
@@ -62,23 +74,24 @@ class RunDiemBFT(process):
 
         for i, c in enumerate(clients):
             setup({c}, (config, config_id, i, list(validators),
-                        private_keys_clients[c], public_keys_validators))
+                        private_keys_clients[c], public_keys_validators, twins_list))
+        
+        for i, t in enumerate(twins):
+            setup({t}, (config, config_id, i, list(validators), list(clients),
+                        private_keys_validators[twins_mappings[t]], public_keys_validators, public_keys_clients, nw_playground, parsed_config, twins_mappings[t]))
 
         start(nw_playground)
-        print("Starting Replica")
         start(validators)
-        print("Starting Clients")
+        start(twins)
         start(clients)
-        print("Clients Done")
         
         await(each(c in clients, has=received(('Done',), from_=c)))
         output("All clients done, informing all validators.", config_id)
         send(('Done',), to=validators)
         send(('Done',), to=nw_playground)
 
-    def parse_config(twin_config, validators):
+    def parse_config(twin_config, validators_list, twins_list):
         parsed_config = {}
-        validators_list = list(validators)
         parsed_config["no_of_twins"] = twin_config["no_of_twins"]
         parsed_config["no_of_rounds"] = twin_config["no_of_rounds"]
         parsed_config["no_of_replicas"] = twin_config["no_of_replicas"]
@@ -88,7 +101,10 @@ class RunDiemBFT(process):
             for partition in twin_config["round_configs"][round_num]["partitions"]:
                 parsed_partition = []
                 for process in partition:
-                    parsed_partition.append(validators_list[ord(process)-ord('A')])
+                    if '\'' in process: # Twin Process
+                        parsed_partition.append(twins_list[ord(process[0])-ord('A')])
+                    else:
+                        parsed_partition.append(validators_list[ord(process)-ord('A')])
                 
                 parsed_partitions.append(parsed_partition)
 
@@ -96,7 +112,7 @@ class RunDiemBFT(process):
             parsed_leader = validators_list[ord(leader)-ord('A')]
             
             parsed_config["round_configs"][int(round_num)] = {"leader": parsed_leader, "partitions": parsed_partitions}
-        
+        print(f"=========> Parsed Config : {parsed_config}")
         return parsed_config
 
                 
