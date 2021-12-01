@@ -15,7 +15,7 @@ from network_playground import NetworkPlayground
 
 class Validator (process):
 
-    def setup(config, config_id: int, validator_id: int, replicas: list, clients: list, private_key, public_keys_validators, public_keys_clients, nw_playground, parsed_config, twin_of=None):
+    def setup(config, config_id: int, validator_id: int, replicas: list, clients: list, private_key, public_keys_validators, public_keys_clients, nw_playground, parsed_config, violation_checker, twin_of=None):
         
         # TODO : Handle validator_id
         LOGGER.replicas = replicas
@@ -36,6 +36,7 @@ class Validator (process):
         self.request_cache = dict()
         self.recently_committed_block_ids = list()
         self.should_start_new_round = True
+        self.violation_checker = violation_checker
 
         self.ledger = Ledger(
             config_id, validator_id, self.id_block, self.recently_committed_block_ids, self.request_cache, twin_of)
@@ -104,6 +105,9 @@ class Validator (process):
                         'resp_status': "success"
                     }
                     send(('Response', resp), to=txn['client'])
+                    # Send Response to viloation_checker about recently committed block and ledger state
+                    send(('Response', resp, self.pacemaker.current_round, self.ledger.get_ledger_hash(), self.ledger.ledger_length), to=violation_checker)
+
                     LOGGER.log_event("Sent", "Response", resp, txn['client'])
                     self.request_cache[request_id] = resp
             self.recently_committed_block_ids.clear()
@@ -166,7 +170,9 @@ class Validator (process):
     '''Procedure process proposal msg(P)'''
     def receive(msg=('Proposal', proposal_msg, author), from_=p):
         p = author
-        LOGGER.log_event("Received", "Proposal", proposal_msg, p)
+        LOGGER.log_action(f"Received Proposal Msg from :{author}")
+        
+        #LOGGER.log_event("Received", "Proposal", proposal_msg, p)
         
         signature_verified = Cryptography.get_verified_message(
             proposal_msg.signature, public_keys_validators[p])
@@ -175,20 +181,26 @@ class Validator (process):
             LOGGER.log_action("Verified ProposalMsg signature", True)
 
             self.should_start_new_round = False
-
+            LOGGER.log_action(f"proposal_msg.block.qc None : {proposal_msg.block.qc} and p != replicas[validator_id] : {p != replicas[validator_id]}")
+            
             if proposal_msg.block.qc is not None and p != replicas[validator_id]:
+                LOGGER.log_action("Here 2 : Trying to Form Vote Msg...")
                 '''process certificate qc(P.block.qc)'''
                 process_certificate_qc(proposal_msg.block.qc)
 
+            LOGGER.log_action(f"proposal_msg.high_commit_qc None : {proposal_msg.high_commit_qc}")
             if proposal_msg.high_commit_qc is not None:
+                LOGGER.log_action("Here 3 : Trying to Form Vote Msg...")
                 '''process certificate qc(P.high commit qc)'''
                 process_certificate_qc(proposal_msg.high_commit_qc)
 
             '''Pacemaker.advance round tc(P.last round tc)'''
+            LOGGER.log_action("Here 4 : Trying to Form Vote Msg...")
             self.pacemaker.advance_round_tc(proposal_msg.last_round_tc)
 
             '''round ← Pacemaker.current round'''
             round = self.pacemaker.current_round
+            LOGGER.log_action("Here 5 : Trying to Form Vote Msg...")
             '''leader ← LeaderElection.get leader(current round)'''
             leader = self.leader_election.get_leader(round)
             '''if P.block.round 6= round ∨ P.sender 6= leader ∨ P.block.author 6= leader then
@@ -197,8 +209,13 @@ class Validator (process):
                 LOGGER.log("ROUND PROPOSAL EARLY EXIT", proposal_msg.block.round, round, replicas[proposal_msg.sender], leader)
                 return
 
+            LOGGER.log_action("Here 6 : Trying to Form Vote Msg...")
+            
             if p != replicas[validator_id]:
                 # Validate (and remove) the transactions in current mempool with the received txns
+                # print(f"Payload : {proposal_msg.block.payload}")
+                # tp = proposal_msg.block.payload
+                # tp["command"]
                 if not self.mempool.validate_and_remove_transactions(proposal_msg.block.payload):
                     LOGGER.log(
                         "Not processing the Proposal message as transactions are not valid", None)
@@ -207,17 +224,20 @@ class Validator (process):
             if len(proposal_msg.block.payload) == 0:
                 self.should_start_new_round = True
 
+            LOGGER.log_action("Here 7 : Trying to Form Vote Msg...")
+
             '''Block-Tree.execute and insert(P) // Adds a new speculative state to the Ledger'''
             self.blocktree.execute_and_insert(proposal_msg.block)
-
             '''vote msg ← Safety.make vote(P.block, P.last round tc)'''
             vote_msg = self.safety.make_vote(
                 proposal_msg.block, proposal_msg.last_round_tc)
-
+            LOGGER.log_action(f"Vote Msg created {vote_msg}.")
+            
             '''if vote msg != ⊥ then
                     send vote msg to LeaderElection.get leader(current round + 1)'''
             if vote_msg is not None:
                 next_leader = self.leader_election.get_leader(self.pacemaker.current_round + 1)
+                LOGGER.log_action(f"Sending Vote Msg to {next_leader}")
                 send(('Vote', vote_msg, self.pacemaker.current_round, next_leader),
                      to=self.nw_playground)
                 LOGGER.log_event("Sent", "Vote", vote_msg, next_leader)
@@ -227,9 +247,10 @@ class Validator (process):
 
     '''Procedure process vote msg(M)'''
     def receive(msg=('Vote', vote_msg, author), from_=p):
+        #LOGGER.log_event(f"Received  {}", "Vote", vote_msg, p)
+        LOGGER.log_action(f"Received Vote Msgs from {author}")
         p = author
-        LOGGER.log_event("Received", "Vote", vote_msg, p)
-
+        
         signature_verified = Cryptography.get_verified_message(
             vote_msg.signature, public_keys_validators[p])
 
@@ -248,7 +269,7 @@ class Validator (process):
         else:
             LOGGER.log_action("Verified VoteMsg signature", False)
 
-        LOGGER.log("Received VoteMsg ends g", None)
+        LOGGER.log("Received VoteMsg ends", None)
 
     '''Procedure process timeout msg(M)'''
     def receive(msg=('Timeout', timeout_msg, author), from_=p):
@@ -291,14 +312,14 @@ class Validator (process):
                 # Directly reply with the cached response
                 response = self.request_cache[req['req_id']]
                 send(('Response', response), to=client)
+                
+                
                 LOGGER.log_event("Sent", "Cached Response", response, client)
                 return
 
             req['client'] = client
-            # Modify Client Txn
-            # TODO : REMOVE
-            if twin_of is not None:
-                req['req_id'] = req['req_id'] + "_twin"
+            if twin_of is not None:   # In case different txns in twins, no entry will be committed
+                req['command'] = req['command'] + "_twin"
             
             self.mempool.add_transaction(req)
 

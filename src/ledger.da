@@ -14,6 +14,8 @@ class Ledger:
         self.commited = dict()
         self.id_to_block = id_block
         self.request_cache = request_cache
+        self.ledger_length = 0
+
         if twin_of is not None:
             self.filename = "validator_" + str(validator_id) + "_twin" + ".ledger"
         else:
@@ -100,6 +102,7 @@ class Ledger:
                     continue
                 else:
                     LOGGER.log('Ledger: commit committing a txn', txn)
+                    self.ledger_length += 1  # Update Length of the ledger 
                     fp.write(txn['command']+'\n')
             self.recently_committed_block_ids.append(block_id)
             LOGGER.log_action('Committed blocks to ledger',
@@ -141,3 +144,11 @@ class Ledger:
             return commited_block
         LOGGER.log('Ledger: committed_block: returns', None)
         return None
+
+    def get_ledger_hash(self):
+        with open('../ledgers/config' + str(self.config_id) +
+                  "/" + self.filename, 'r') as f:
+            ledger_data = f.read()   
+            return Cryptography.hash(ledger_data)  # Hash the ledger data
+             
+            

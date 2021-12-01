@@ -49,14 +49,34 @@ class LOGGER:
             obj = todict(obj)
 
         f = open(LOGGER.filename, 'a+')
-        print(
+        if obj is not None:
+            print(
+                "Timestamp:", datetime.datetime.now(), "|",
+                "ProcessId:", LOGGER.process_id, "|",
+                "Action:", action, "|",
+                "Object:", obj, "|",
+                file=f
+            )
+        else:
+            print(
             "Timestamp:", datetime.datetime.now(), "|",
             "ProcessId:", LOGGER.process_id, "|",
             "Action:", action, "|",
-            "Object:", obj, "|",
             file=f
+            )
+        f.close()
+    
+    def debug(output):
+
+        f = open(LOGGER.filename, 'a+')
+        print(
+        "Timestamp:", datetime.datetime.now(), "|",
+        "ProcessId:", LOGGER.process_id, "|",
+        "Action:", output, "|",
+        file=f
         )
         f.close()
+    
 
     def log(funcname, *params): pass
         # timestamp = datetime.datetime.now()
@@ -70,3 +90,5 @@ class LOGGER:
         # print(timestamp, LOGGER.process_id,
         #       funcname, p_list, file=f)
         # f.close()
+
+    

@@ -40,12 +40,18 @@ class MemPool:
     def validate_and_remove_transactions(self, txns):
         LOGGER.log('MemPool: validate_and_remove_transactions', txns)
         to_remove = []
+        LOGGER.debug(f"Received Txns : {txns}")
         for txn in txns:
             if txn['req_id'] in self.pending_txns:
                 to_remove.append(txn['req_id'])
+
+            #TODO : Remove this
+            # elif txn['req_id'].replace("_twin","") in self.pending_txns:
+            #     to_remove.append(txn['req_id'].replace("_twin",""))
+            
             else:
-                LOGGER.log(
-                    'MemPool: validate_and_remove_transactions: returns', False)
+                LOGGER.debug(
+                    'MemPool: validate_and_remove_transactions: returns')
                 return False
 
         for req_id in to_remove:

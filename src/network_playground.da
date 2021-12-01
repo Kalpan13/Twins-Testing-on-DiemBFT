@@ -6,12 +6,16 @@ class NetworkPlayground (process):
         self.twins_mappings = twins_mappings # Map containing <Twin Process, Actual Process>
         self.replicas = replicas
         self.twin_config = twin_config
+        self.rev_twins_mappings = dict(zip(twins_mappings.values(),twins_mappings.keys())) # Map containing <Actual Process, Twin Process>
         LOGGER.replicas = replicas
         LOGGER.filename = '../logs/config' + str(config_id) + '/' \
             + "Network_Playground" + ".log"
         LOGGER.nw_playground = self 
 
     def run():
+        LOGGER.log_action(f"Config : {self.twin_config}")
+        LOGGER.log_action(f"Twins : {self.twins_mappings}")
+        
         await(received(('Done',), from_=parent()))
     
     '''Procedure process proposal msg(P)'''
@@ -19,7 +23,6 @@ class NetworkPlayground (process):
         
         LOGGER.log_event(f"{p} : Received", "Proposal", proposal_msg, p)
         partition_members = find_partition_members(current_round, p)
-        print(f"Partition Members : {partition_members}")
         LOGGER.log_action(f"Sending Proposal Msg to {partition_members}")
         if p in twins_mappings.keys():
             p = twins_mappings[p]   # Replacing Author from Twin to Actual Process
@@ -30,12 +33,20 @@ class NetworkPlayground (process):
     def receive(msg=('Vote', vote_msg, current_round, to), from_=p):
         LOGGER.log_action(f"Received Vote Msg from: {p}, for:{to} ")
         partition_members = find_partition_members(current_round, p)
+        
+        # If sender is twin, replace it with Actual process
+        if p in twins_mappings:
+            p = twins_mappings[p] 
+
         if to in partition_members:
-            if p in twins_mappings:
-                p = twins_mappings[p]
-            LOGGER.log_action(f"Sending Vote Msg to :{to}")
+            LOGGER.log_action(f"Sending Vote Msg to: {to} ")
             send(('Vote', vote_msg, p), to=to)
 
+        if to in self.rev_twins_mappings.keys(): # Check if recipient has a twin <A,A'>
+            if self.rev_twins_mappings[to] in partition_members: # Check if twin is in partition
+                LOGGER.log_action(f"Sending Vote Msg to twin : {self.rev_twins_mappings[to]} ")
+                send(('Vote', vote_msg, p), to=self.rev_twins_mappings[to])
+    
     '''Procedure process timeout msg(M)'''
     def receive(msg=('Timeout', timeout_msg, current_round), from_=p):
         LOGGER.log_event("Received", "Timeout", timeout_msg, p)

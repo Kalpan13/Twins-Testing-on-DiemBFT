@@ -9,6 +9,7 @@ from config import configs
 from cryptography import Cryptography
 from validator import ValidatorFI
 from network_playground import NetworkPlayground
+from liveness_checker import ViolationChecker
 
 class RunDiemBFT(process):
 
@@ -16,6 +17,11 @@ class RunDiemBFT(process):
         self.nvalidators = int(config['nvalidators'])
         self.nclients = int(config['nclients'])
         self.nfaulty = int(config['nfaulty'])
+        self.validators = None
+        self.twins = None
+        self.clients = None
+        self.nw_playground = None
+        self.violation_checker = None
 
     def run():
 
@@ -43,6 +49,7 @@ class RunDiemBFT(process):
         twins = new(ValidatorFI, num = no_of_twins)
         clients = new(Client, num=nclients)
         nw_playground = new(NetworkPlayground, num=1)
+        violation_checker = new(ViolationChecker, num=1)
 
         validators_list = list(validators)
         twins_list = list(twins)
@@ -70,7 +77,8 @@ class RunDiemBFT(process):
 
         for i, v in enumerate(validators):
             setup({v}, (config, config_id, i, list(validators), list(clients),
-                        private_keys_validators[v], public_keys_validators, public_keys_clients, nw_playground, parsed_config))
+                        private_keys_validators[v], public_keys_validators, public_keys_clients, 
+                            nw_playground, parsed_config, violation_checker))
 
         for i, c in enumerate(clients):
             setup({c}, (config, config_id, i, list(validators),
@@ -78,18 +86,24 @@ class RunDiemBFT(process):
         
         for i, t in enumerate(twins):
             setup({t}, (config, config_id, i, list(validators), list(clients),
-                        private_keys_validators[twins_mappings[t]], public_keys_validators, public_keys_clients, nw_playground, parsed_config, twins_mappings[t]))
+                        private_keys_validators[twins_mappings[t]], public_keys_validators, 
+                            public_keys_clients, nw_playground, parsed_config, violation_checker, twins_mappings[t]))
 
+        setup(violation_checker, (validators_list, twins_mappings, no_of_rounds))
         start(nw_playground)
         start(validators)
         start(twins)
         start(clients)
+        start(violation_checker)
         
         await(each(c in clients, has=received(('Done',), from_=c)))
         output("All clients done, informing all validators.", config_id)
-        send(('Done',), to=validators)
+        send(('Done',), to=(list(validators)+list(twins)))
         send(('Done',), to=nw_playground)
-
+        print(f"Sending done to : {violation_checker}")
+        send(('Done',), to=violation_checker)
+        send(('Done',), to=parent())
+        
     def parse_config(twin_config, validators_list, twins_list):
         parsed_config = {}
         parsed_config["no_of_twins"] = twin_config["no_of_twins"]
@@ -112,10 +126,20 @@ class RunDiemBFT(process):
             parsed_leader = validators_list[ord(leader)-ord('A')]
             
             parsed_config["round_configs"][int(round_num)] = {"leader": parsed_leader, "partitions": parsed_partitions}
-        print(f"=========> Parsed Config : {parsed_config}")
         return parsed_config
 
-                
+    def receive(msg = ('Liveness-Violation', liveness_round), from_=violation_checker):
+        print(f"Liveness Violated at round : {liveness_round}. Hence, Stopping Execution")
+        send(('Done',), to=(list(validators)+list(twins)))
+        send(('Done',), to=nw_playground)
+        send(('Done',), to=violation_checker)
+        
+        end(clients)
+        end(twins)
+        end(validators)
+        end(nw_playground)
+        end(violation_checker) 
+
 def is_config_valid(config):
     if int(config['nvalidators']) < (3 * int(config['nfaulty']) + 1):
         print(
@@ -145,4 +169,7 @@ def main():
         p = new(RunDiemBFT)
         setup(p, (config, config_id))
         start(p)
+        await(received(('Done',), from_=p))
+        print(f"Received Done from {p}")
+        end(p)
         config_id += 1

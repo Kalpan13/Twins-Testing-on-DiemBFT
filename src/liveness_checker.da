@@ -1,0 +1,70 @@
+import threading
+from logger_util import LOGGER
+
+class ViolationChecker(process):
+
+    def setup(validators: list, twins_mappings : list, no_of_rounds : int, config_id : int = 0, liveness_timeout = 15, faulty : int = 0):
+
+        LOGGER.replicas = validators
+        LOGGER.process_id = "ViolationChecker"
+        LOGGER.filename = '../logs/config' + str(config_id) \
+            + '/' + "ViolationChecker.log"
+        
+        self.liveness_timeout = liveness_timeout
+        self.validators = validators
+        self.ledger_commits = {}
+        self.liveness_checking_round = 0
+        self.no_of_rounds = no_of_rounds
+        self.timer = None
+
+    def run():
+        LOGGER.debug("Violation Checker Started..")
+        start_timer(1)
+        await(received(('Done',), from_=parent()))
+        LOGGER.debug("Received Done from Parent")
+        
+        
+    def receive(msg=('Response', response, commit_round, ledger_hash, ledger_length), from_=validator):
+        
+        LOGGER.debug(f"Received Response for {commit_round} from validator : {validator}")
+        
+        if validator in twins_mappings.keys() or validator in twins_mappings.values(): # Ignore response from Faulty Replicas
+            return
+        
+        # Checking Safety:(Ledgers of non-faulty replicas should be consistent)
+
+        if ledger_length in ledger_commits.keys():  # If Hash(Ledger_length) is already there then Hash should be consistent
+            if ledger_commits[ledger_length] != ledger_hash:
+                LOGGER.debug(f"Safety Violated for ledger length {ledger_length} at validator : {validator}") # Ledgers are inconsistent
+                safety_violated(commit_round, validator)
+        else:
+            ledger_commits[ledger_length] = ledger_hash
+
+        # Checking Liveness :(At least 1 commit message for round > current round before liveness timeout)
+
+        if liveness_checking_round <= commit_round:
+            start_timer(commit_round+1)
+            liveness_checking_round = commit_round
+    
+    def liveness_violated():
+        LOGGER.debug("Liveness Violated")
+        send(('Liveness-Violation',liveness_checking_round), to=parent())
+
+    def safety_violated(violation_round, validator):
+        LOGGER.debug("Safety Violated")
+        send(('Safety-Violation',violation_round, validator), to=parent())
+
+    def stop_timer(round):
+        if self.timer is not None:
+            self.timer.cancel()
+
+    '''Procedure start timer(new round)'''
+    def start_timer(new_round):
+        '''stop timer(current round)'''
+        self.stop_timer(self.liveness_checking_round)
+        '''current round ← new round'''
+        self.liveness_checking_round = new_round
+        '''start local timer for round current round for duration get round timer(current round)'''
+
+        self.timer = threading.Timer(liveness_timeout, self.liveness_violated)
+        self.timer.start()
