@@ -201,15 +201,17 @@ def generate_round_configs(nreplicas, ntwins, npartitions, nrounds, deterministi
     testcase_config['timeout_msg_drop_cnt'] = timeout_msg_drop_cnt
     return testcase_config
 
-time1 = time.time()
-testcase_config = generate_round_configs(nreplicas=4, ntwins=1, npartitions=2, nrounds=7, deterministic=False, onlyfaultyleaders=True, maxpartitionsConfigs=6, onlyProgressivePartitionConfigs=True,message_types_to_drop=["Proposal", "Vote"], message_type_drop_probability=0.7, timeout_msg_drop_cnt=3)
-time2 = time.time()
-print("Time taken", time2 - time1)
+def main():
+    time1 = time.time()
+    testcase_config = generate_round_configs(nreplicas=4, ntwins=1, npartitions=2, nrounds=7, deterministic=False, onlyfaultyleaders=True, maxpartitionsConfigs=6, onlyProgressivePartitionConfigs=True,message_types_to_drop=["Proposal", "Vote"], message_type_drop_probability=0.7, timeout_msg_drop_cnt=3)
+    time2 = time.time()
+    print("Time taken", time2 - time1)
 
-with open(sys.argv[1], 'w') as f:
-    json.dump(testcase_config, f)
+    with open(sys.argv[1], 'w') as f:
+        json.dump(testcase_config, f)
 
-
+if __name__ == "__main__":
+    main()
 
 
 
