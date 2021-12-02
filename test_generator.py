@@ -2,6 +2,8 @@ import copy
 from os import closerange
 import random
 import json
+import time
+import sys
 
 def generate_replicas(nreplicas):
     current_node_id = 'A'
@@ -117,7 +119,7 @@ def generate_progressive_partition_configs_with_leaders(partition_configs, repli
 
     return partition_configs_with_leader
 
-def generate_round_configs(nreplicas, ntwins, npartitions, nrounds, deterministic, onlyfaultyleaders, maxpartitionsConfigs, onlyProgressivePartitionConfigs, message_types_to_drop, message_type_drop_probability):
+def generate_round_configs(nreplicas, ntwins, npartitions, nrounds, deterministic, onlyfaultyleaders, maxpartitionsConfigs, onlyProgressivePartitionConfigs, message_types_to_drop, message_type_drop_probability, timeout_msg_drop_cnt):
 
     replicas = generate_replicas(nreplicas)
     twins = generate_twins(ntwins)
@@ -196,20 +198,16 @@ def generate_round_configs(nreplicas, ntwins, npartitions, nrounds, deterministi
     testcase_config['no_of_twins'] = len(twins)
     testcase_config['no_of_rounds'] = nrounds
     testcase_config['round_configs'] = round_configs
+    testcase_config['timeout_msg_drop_cnt'] = timeout_msg_drop_cnt
     return testcase_config
 
-testcase_config = generate_round_configs(nreplicas=4, ntwins=1, npartitions=2, nrounds=7, deterministic=True, onlyfaultyleaders=False, maxpartitionsConfigs=15, onlyProgressivePartitionConfigs=True,message_types_to_drop=[], message_type_drop_probability=0)
+time1 = time.time()
+testcase_config = generate_round_configs(nreplicas=4, ntwins=1, npartitions=2, nrounds=7, deterministic=False, onlyfaultyleaders=True, maxpartitionsConfigs=6, onlyProgressivePartitionConfigs=True,message_types_to_drop=["Proposal", "Vote"], message_type_drop_probability=0.7, timeout_msg_drop_cnt=3)
+time2 = time.time()
+print("Time taken", time2 - time1)
 
-with open('twins_config.json', 'w') as f:
+with open(sys.argv[1], 'w') as f:
     json.dump(testcase_config, f)
-
-
-
-
-
-
-
-              
 
 
 
